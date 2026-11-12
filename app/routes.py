@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app import __version__
 from app.config import Settings
@@ -20,6 +22,7 @@ from app.schemas import (
     Transaction,
 )
 from app.security import check_credentials, create_token, current_user
+from app.statements import build_statement, summary, to_csv
 from app.store import InMemoryStore
 
 logger = logging.getLogger("payflex")
@@ -95,3 +98,25 @@ async def list_transactions(
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> list[Transaction]:
     return db.list_transactions(user, account_id, limit)
+
+
+@router.get("/accounts/{account_id}/statement", tags=["accounts"])
+async def account_statement(
+    account_id: str,
+    user: User,
+    db: Store,
+    start: date,
+    end: date,
+    export: Annotated[str, Query(pattern="^(json|csv)$")] = "json",
+) -> Response:
+    account = next((acc for acc in db.list_accounts(user) if acc.id == account_id), None)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"account {account_id} not found")
+    history = db.list_transactions(user, account_id, limit=10_000)
+    try:
+        statement = build_statement(account_id, account.currency, history, start, end)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if export == "csv":
+        return PlainTextResponse(to_csv(statement), media_type="text/csv")
+    return JSONResponse(summary(statement))
