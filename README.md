@@ -131,6 +131,25 @@ Les faux secrets n'existent **que** sur `demo/leak`, jamais dans l'historique de
 
 Captures à prendre pour le rapport : [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
+## Bonus : observabilité Prometheus + Grafana
+
+`scripts/export_prometheus.py` convertit les métriques du pipeline au format d'exposition Prometheus : couverture, p95, taux d'erreur, fuites, taux de confidentialité, erreurs critiques et avertissements, statut, résultat de chaque job.
+
+* **En CI**, le fichier `pipeline_metrics.prom` est publié dans l'artefact `incident-report`. Si le secret `PUSHGATEWAY_URL` est défini, il est aussi poussé vers cette Pushgateway.
+* **En local**, la commande suivante démarre la stack :
+
+```bash
+docker compose --profile monitoring up -d            # Pushgateway :9091, Prometheus :9090, Grafana :3000
+PUSHGATEWAY_URL=http://localhost:9091 bash scripts/run_local_pipeline.sh
+```
+
+Le tableau de bord Grafana « PayFlex - indicateurs du pipeline CI/CD » est provisionné automatiquement et accessible en lecture anonyme. Il affiche :
+
+* le statut de la dernière exécution d'une branche ;
+* les jauges couverture, p95, erreurs et confidentialité, colorées selon les seuils warning/critique ;
+* la comparaison des branches ;
+* le résultat de chaque job.
+
 ## Structure du dépôt
 
 ```
