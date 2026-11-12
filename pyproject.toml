@@ -1,0 +1,36 @@
+[project]
+name = "payflex-api"
+version = "1.0.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["htmlcov", "reports", "metrics", ".scan"]
+
+[tool.ruff.lint]
+# E/W/F : pycodestyle + pyflakes ; B : bugbear ; C90 : complexité ; SIM : simplifications ;
+# UP : modernisation ; S : règles sécurité (complément de Bandit) ; N : nommage.
+select = ["E", "W", "F", "B", "C90", "SIM", "UP", "S", "N", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"scripts/**" = ["S603", "S607"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
