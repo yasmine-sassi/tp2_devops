@@ -127,4 +127,8 @@ needs="${needs%,}}"
 $PY scripts/quality_gate.py report --needs "$needs" --output-dir reports > /dev/null
 echo "Rapport : reports/incident_report.md"
 $PY -c "import json; r = json.load(open('reports/incident_report.json', encoding='utf-8')); print('Statut :', r['status'], '| Déploiement :', r['deployment'])"
+
+# Bonus : export Prometheus (+ Pushgateway si PUSHGATEWAY_URL est défini)
+$PY scripts/export_prometheus.py --output reports/pipeline_metrics.prom \
+  ${PUSHGATEWAY_URL:+--push-url "$PUSHGATEWAY_URL"} ${PIPELINE_BRANCH:+--branch "$PIPELINE_BRANCH"} || true
 [ "${RESULT[deploy]}" = success ]

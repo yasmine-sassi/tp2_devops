@@ -67,6 +67,39 @@ services:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_extensions:/opt/sonarqube/extensions
 
+  # ---- Bonus observabilité : indicateurs du pipeline (profil « monitoring ») ----
+  #   docker compose --profile monitoring up -d
+  #   PUSHGATEWAY_URL=http://localhost:9091 bash scripts/run_local_pipeline.sh
+  #   Grafana : http://localhost:3000 (lecture anonyme), Prometheus : http://localhost:9090
+  pushgateway:
+    image: prom/pushgateway:v1.10.0
+    profiles: ["monitoring"]
+    ports:
+      - "9091:9091"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    depends_on: [pushgateway]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    profiles: ["monitoring"]
+    depends_on: [prometheus]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/payflex-pipeline.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+
 volumes:
   sonarqube_data:
   sonarqube_extensions:

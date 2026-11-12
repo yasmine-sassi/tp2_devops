@@ -441,6 +441,13 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python scripts/quality_gate.py report --metrics-dir metrics --output-dir reports
+      - name: Export Prometheus des indicateurs (bonus observabilité)
+        if: always()
+        env:
+          PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
+        run: |
+          python scripts/export_prometheus.py --output reports/pipeline_metrics.prom \
+            ${PUSHGATEWAY_URL:+--push-url "$PUSHGATEWAY_URL"}
       - name: Publier le rapport
         if: always()
         uses: actions/upload-artifact@v7
@@ -449,3 +456,4 @@ jobs:
           path: |
             reports/incident_report.md
             reports/incident_report.json
+            reports/pipeline_metrics.prom
