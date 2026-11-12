@@ -718,11 +718,22 @@ def render_markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def read_needs(raw: str) -> dict:
+    """Contexte `needs` : JSON en ligne (toJSON(needs) en CI) ou chemin d'un fichier JSON.
+
+    Le JSON est testé en premier : passé tel quel à Path(), une longue chaîne provoque
+    « File name too long » (ENAMETOOLONG) sous Linux.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return {}
+    if raw.startswith("{"):
+        return json.loads(raw)
+    return json.loads(Path(raw).read_text(encoding="utf-8"))
+
+
 def cmd_report(args: argparse.Namespace) -> int:
-    needs_raw = args.needs
-    if needs_raw and Path(needs_raw).is_file():
-        needs_raw = Path(needs_raw).read_text(encoding="utf-8")
-    needs = json.loads(needs_raw) if needs_raw else {}
+    needs = read_needs(args.needs)
     report = build_report(load_metrics(Path(args.metrics_dir)), needs)
     out_dir = Path(args.output_dir)
     write_json(out_dir / "incident_report.json", report)

@@ -46,10 +46,10 @@ jobs:
     name: "1 · Confidentialité (code, historique, config)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # historique complet pour Gitleaks
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Installer Gitleaks
@@ -67,14 +67,14 @@ jobs:
             --output metrics/confidentiality-source.json
       - name: Publier les métriques
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-secrets-scan
           path: metrics/
           if-no-files-found: ignore
       - name: Publier les rapports Gitleaks (secrets masqués)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-secrets-scan
           path: reports/gitleaks-*.json
@@ -84,8 +84,8 @@ jobs:
     name: "1 · Analyse statique (Ruff + Bandit)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -104,14 +104,14 @@ jobs:
           python scripts/quality_gate.py evaluate --scope static --require static
       - name: Publier les métriques
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-static-analysis
           path: metrics/
           if-no-files-found: ignore
       - name: Publier les rapports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-static-analysis
           path: reports/
@@ -121,8 +121,8 @@ jobs:
     name: "1 · Tests unitaires + couverture"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -141,14 +141,14 @@ jobs:
           python scripts/quality_gate.py evaluate --scope ut --require ut
       - name: Publier les métriques
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-unit-tests
           path: metrics/
           if-no-files-found: ignore
       - name: Publier les rapports (JUnit, couverture XML + HTML)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-unit-tests
           path: reports/
@@ -167,11 +167,11 @@ jobs:
         run: |
           echo "::notice title=SonarQube non configuré::Secrets SONAR_TOKEN / SONAR_HOST_URL absents : analyse Sonar ignorée (Ruff + Bandit assurent l'analyse statique)."
           echo "SonarQube non configuré : job neutre (voir README pour l'activer)." >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
         with:
           name: reports-unit-tests
@@ -191,7 +191,7 @@ jobs:
           python3 scripts/quality_gate.py evaluate --scope static
       - name: Publier les métriques
         if: always() && env.SONAR_TOKEN != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-sonarqube
           path: metrics/
@@ -205,8 +205,8 @@ jobs:
     env:
       IMAGE_TAG: ci
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Mot de passe éphémère du client de test
@@ -242,21 +242,21 @@ jobs:
           python scripts/quality_gate.py evaluate --scope it --require it
       - name: Sauvegarde de l'image testée (réutilisée par le job performance)
         run: docker save "payflex-api:${IMAGE_TAG}" | gzip -1 > payflex-api-image.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docker-image
           path: payflex-api-image.tar.gz
           retention-days: 1
       - name: Publier les métriques
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-build-integration
           path: metrics/
           if-no-files-found: ignore
       - name: Publier les artefacts du build (FS image, config, logs, rapport Newman)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts
           path: |
@@ -270,8 +270,8 @@ jobs:
     needs: build-integration
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Installer Gitleaks
@@ -279,12 +279,12 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin gitleaks
       - name: Récupérer les artefacts du build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts
           path: .
       - name: Récupérer les rapports du pipeline
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: reports-*
           path: artifacts/reports
@@ -301,7 +301,7 @@ jobs:
             --output metrics/confidentiality-artifacts.json
       - name: Publier les métriques
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-artifact-scan
           path: metrics/
@@ -315,11 +315,11 @@ jobs:
     env:
       IMAGE_TAG: ci
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: docker-image
       - name: Charger l'image testée en intégration
@@ -350,14 +350,14 @@ jobs:
           python scripts/quality_gate.py evaluate --scope perf --require perf
       - name: Publier les métriques
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metrics-performance
           path: metrics/
           if-no-files-found: ignore
       - name: Publier les rapports k6
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-performance
           path: reports/
@@ -369,11 +369,11 @@ jobs:
     needs: [secrets-scan, static-analysis, unit-tests, sonarqube, build-integration, artifact-scan, performance]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: metrics-*
           path: metrics
@@ -384,7 +384,7 @@ jobs:
             --require ut,it,perf,static,confidentiality --output reports/quality_gate.json
       - name: Publier la décision
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: quality-gate
           path: reports/quality_gate.json
@@ -427,11 +427,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: metrics-*
@@ -443,7 +443,7 @@ jobs:
         run: python scripts/quality_gate.py report --metrics-dir metrics --output-dir reports
       - name: Publier le rapport
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: incident-report
           path: |
