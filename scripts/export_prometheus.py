@@ -12,9 +12,9 @@ d'exposition Prometheus et, si --push-url est fourni, le pousse vers une Pushgat
 from __future__ import annotations
 
 import argparse
+import base64
 import sys
 import time
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -141,9 +141,9 @@ def render(series: list[tuple[str, str, float, dict]], base_labels: dict) -> str
 
 
 def push(url: str, body: str, branch: str) -> None:
-    target = (
-        f"{url.rstrip('/')}/metrics/job/{PREFIX}/branch/" f"{urllib.parse.quote(branch, safe='')}"
-    )
+    # Encodage base64 (URL-safe) exigé par la Pushgateway pour les valeurs contenant « / ».
+    encoded = base64.urlsafe_b64encode(branch.encode()).decode().rstrip("=") or "="
+    target = f"{url.rstrip('/')}/metrics/job/{PREFIX}/branch@base64/{encoded}"
     if not target.startswith(("http://", "https://")):
         raise SystemExit(f"URL Pushgateway invalide : {url}")
     request = urllib.request.Request(target, data=body.encode(), method="PUT")  # noqa: S310

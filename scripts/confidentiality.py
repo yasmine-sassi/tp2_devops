@@ -19,6 +19,7 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -42,6 +43,15 @@ def parse_scans(values: list[str]) -> list[tuple[str, Path]]:
     return scans
 
 
+def normalize_path(path: str) -> str:
+    """Chemin relatif au dépôt : retire la copie de travail .scan/<cible>/ du scan de config.
+
+    Ainsi, une même fuite vue par le scan du code et par celui de la configuration n'est
+    comptée qu'une seule fois.
+    """
+    return re.sub(r"^\.scan/[^/]+/", "", path.replace("\\", "/"))
+
+
 def read_findings(target: str, report: Path) -> list[dict]:
     """Extrait les champs utiles (jamais le secret lui-même) d'un rapport Gitleaks."""
     findings = []
@@ -51,7 +61,7 @@ def read_findings(target: str, report: Path) -> list[dict]:
                 "target": target,
                 "rule": item.get("RuleID"),
                 "description": item.get("Description"),
-                "file": item.get("File"),
+                "file": normalize_path(item.get("File") or ""),
                 "line": item.get("StartLine"),
                 "commit": (item.get("Commit") or "")[:8] or None,
                 "author": item.get("Author") or None,
