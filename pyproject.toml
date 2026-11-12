@@ -11,6 +11,7 @@ filterwarnings = ["ignore::DeprecationWarning:starlette.*"]
 [tool.coverage.run]
 source = ["app"]
 branch = true
+relative_files = true
 
 [tool.coverage.report]
 show_missing = true

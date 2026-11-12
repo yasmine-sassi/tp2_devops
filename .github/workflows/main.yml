@@ -1,0 +1,451 @@
+# Pipeline CI/CD intelligent de PayFlex API.
+#
+#  Étape 1 (parallèle)   secrets-scan | static-analysis | unit-tests (-> sonarqube, optionnel)
+#  Étape 2               build-integration  (image Docker éphémère + Newman)
+#  Étape 3               artifact-scan      (Gitleaks sur l'image, les logs et les rapports)
+#  Étape 4               performance        (k6)
+#  Étape 5               quality-gate       (agrégation + classification)
+#  Étape 6               deploy             (simulé, seulement si le gate passe)
+#  Toujours              incident-report    (rapport d'incident / de pipeline)
+#
+# Fail fast : chaque job dépend (needs) du succès des précédents. Une erreur CRITIQUE fait
+# échouer le job concerné : les jobs suivants sont ignorés et le déploiement n'a pas lieu.
+# Une erreur NON CRITIQUE produit une annotation ::warning:: et le pipeline continue.
+name: PayFlex CI/CD
+
+on:
+  push:
+    branches: [main, "demo/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  GITLEAKS_VERSION: "8.21.2"
+  # Latence artificielle injectée dans l'API (ms). Scénario demo/perf-fail : 600.
+  SIMULATED_LATENCY_MS: "0"
+  K6_VUS: "10"
+  K6_DURATION: "30s"
+  PYTHONIOENCODING: utf-8
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ------------------------------------------------------------------ étape 1
+  secrets-scan:
+    name: "1 · Confidentialité (code, historique, config)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # historique complet pour Gitleaks
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Installer Gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Gitleaks - code source + historique git + fichiers de configuration
+        run: bash scripts/secrets_scan.sh source
+      - name: Taux de confidentialité (doit être 100 %)
+        run: |
+          python scripts/confidentiality.py --stage source \
+            --scan source=reports/gitleaks-source.json \
+            --scan config=reports/gitleaks-config.json \
+            --output metrics/confidentiality-source.json
+      - name: Publier les métriques
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-secrets-scan
+          path: metrics/
+          if-no-files-found: ignore
+      - name: Publier les rapports Gitleaks (secrets masqués)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-secrets-scan
+          path: reports/gitleaks-*.json
+          if-no-files-found: ignore
+
+  static-analysis:
+    name: "1 · Analyse statique (Ruff + Bandit)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Ruff (code smells, bugs potentiels)
+        run: |
+          mkdir -p reports
+          ruff check . --output-format json --exit-zero > reports/ruff.json
+          ruff check . --exit-zero --output-format concise
+      - name: Bandit (sécurité du code applicatif)
+        run: bandit -r app -c pyproject.toml -f json -o reports/bandit.json --exit-zero
+      - name: Métriques + Quality Gate (static)
+        run: |
+          python scripts/collect_metrics.py static --output metrics/static.json > /dev/null
+          python scripts/quality_gate.py evaluate --scope static --require static
+      - name: Publier les métriques
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-static-analysis
+          path: metrics/
+          if-no-files-found: ignore
+      - name: Publier les rapports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-static-analysis
+          path: reports/
+          if-no-files-found: ignore
+
+  unit-tests:
+    name: "1 · Tests unitaires + couverture"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: PyTest + couverture (échec si < 70 %)
+        run: |
+          python -m pytest --cov=app --cov-report=term \
+            --cov-report=xml:coverage.xml --cov-report=html:reports/coverage-html \
+            --junitxml=reports/junit.xml --cov-fail-under=70
+      - name: Métriques + Quality Gate (ut) - avertissement si 70 % <= couverture < 80 %
+        if: always()
+        run: |
+          cp coverage.xml reports/ 2>/dev/null || true
+          python scripts/collect_metrics.py ut --output metrics/ut.json > /dev/null
+          python scripts/quality_gate.py evaluate --scope ut --require ut
+      - name: Publier les métriques
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-unit-tests
+          path: metrics/
+          if-no-files-found: ignore
+      - name: Publier les rapports (JUnit, couverture XML + HTML)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-unit-tests
+          path: reports/
+          if-no-files-found: ignore
+
+  sonarqube:
+    name: "1 · SonarQube (optionnel)"
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+    steps:
+      - name: Vérifier la configuration SonarQube
+        if: env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == ''
+        run: |
+          echo "::notice title=SonarQube non configuré::Secrets SONAR_TOKEN / SONAR_HOST_URL absents : analyse Sonar ignorée (Ruff + Bandit assurent l'analyse statique)."
+          echo "SonarQube non configuré : job neutre (voir README pour l'activer)." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        with:
+          name: reports-unit-tests
+          path: reports
+      - name: Analyse SonarQube (scanner CLI)
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        run: |
+          cp reports/coverage.xml coverage.xml
+          docker run --rm --network host -e SONAR_HOST_URL -e SONAR_TOKEN \
+            -v "$PWD:/usr/src" sonarsource/sonar-scanner-cli:11.1 \
+            -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300 || true
+      - name: Métriques + Quality Gate (Sonar)
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        run: |
+          python3 scripts/collect_metrics.py sonar --host "$SONAR_HOST_URL" --token "$SONAR_TOKEN" \
+            --output metrics/sonar.json > /dev/null
+          python3 scripts/quality_gate.py evaluate --scope static
+      - name: Publier les métriques
+        if: always() && env.SONAR_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-sonarqube
+          path: metrics/
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ étape 2
+  build-integration:
+    name: "2 · Build + tests d'intégration (Docker + Newman)"
+    needs: [secrets-scan, static-analysis, unit-tests, sonarqube]
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Mot de passe éphémère du client de test
+        run: |
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "PAYFLEX_DEMO_PASSWORD=$password" >> "$GITHUB_ENV"
+      - name: Build de l'image
+        run: |
+          mkdir -p reports metrics artifacts/logs && chmod 777 reports
+          docker compose build api
+          docker image inspect "payflex-api:${IMAGE_TAG}" --format '{{json .Config}}' > artifacts/image-config.json
+      - name: Lancement du conteneur éphémère (attente du healthcheck)
+        run: docker compose up -d --wait api
+      - name: Tests d'intégration Newman (contrats + scénario)
+        run: docker compose --profile it run --rm newman
+      - name: Export du système de fichiers de l'image (pour le scan des artefacts)
+        if: always()
+        run: |
+          mkdir -p artifacts/image-fs
+          cid=$(docker compose ps -q api)
+          if [ -n "$cid" ]; then
+            docker export "$cid" | tar -x -C artifacts/image-fs app
+          fi
+          docker compose logs --no-color api > artifacts/logs/api-integration.log || true
+      - name: Destruction de l'environnement éphémère
+        if: always()
+        run: docker compose down -v --remove-orphans
+      - name: Métriques + Quality Gate (it)
+        if: always()
+        run: |
+          python scripts/collect_metrics.py it --output metrics/it.json > /dev/null
+          python scripts/quality_gate.py evaluate --scope it --require it
+      - name: Sauvegarde de l'image testée (réutilisée par le job performance)
+        run: docker save "payflex-api:${IMAGE_TAG}" | gzip -1 > payflex-api-image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: payflex-api-image.tar.gz
+          retention-days: 1
+      - name: Publier les métriques
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-build-integration
+          path: metrics/
+          if-no-files-found: ignore
+      - name: Publier les artefacts du build (FS image, config, logs, rapport Newman)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            artifacts/
+            reports/newman-junit.xml
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ étape 3
+  artifact-scan:
+    name: "3 · Confidentialité des artefacts (image, logs, rapports)"
+    needs: build-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Installer Gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Récupérer les artefacts du build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: .
+      - name: Récupérer les rapports du pipeline
+        uses: actions/download-artifact@v4
+        with:
+          pattern: reports-*
+          path: artifacts/reports
+          merge-multiple: true
+      - name: Gitleaks - artefacts du build
+        run: |
+          cp reports/newman-junit.xml artifacts/reports/ 2>/dev/null || true
+          find artifacts -type f | sed 's|/[^/]*$||' | sort | uniq -c
+          bash scripts/secrets_scan.sh artifacts artifacts
+      - name: Taux de confidentialité des artefacts (doit être 100 %)
+        run: |
+          python scripts/confidentiality.py --stage artifacts \
+            --scan artifacts=reports/gitleaks-artifacts.json \
+            --output metrics/confidentiality-artifacts.json
+      - name: Publier les métriques
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-artifact-scan
+          path: metrics/
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ étape 4
+  performance:
+    name: "4 · Tests de performance (k6)"
+    needs: artifact-scan
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      - name: Charger l'image testée en intégration
+        run: gunzip -c payflex-api-image.tar.gz | docker load
+      - name: Mot de passe éphémère du client de test
+        run: |
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "PAYFLEX_DEMO_PASSWORD=$password" >> "$GITHUB_ENV"
+      - name: Lancement du conteneur éphémère
+        run: |
+          mkdir -p reports metrics && chmod 777 reports
+          echo "SIMULATED_LATENCY_MS=${SIMULATED_LATENCY_MS}"
+          docker compose up --no-build -d --wait api
+      - name: Tir de charge k6 (seuils critiques p95 <= 500 ms, erreurs <= 2 %)
+        run: docker compose --profile perf run --rm k6
+      - name: Logs et destruction de l'environnement
+        if: always()
+        run: |
+          docker compose logs --no-color api > reports/api-performance.log || true
+          docker compose down -v --remove-orphans
+      - name: Métriques + Quality Gate (perf) - avertissement si 200 ms <= p95 <= 500 ms
+        if: always()
+        run: |
+          if [ -f reports/k6-summary.json ]; then
+            python scripts/collect_metrics.py perf --output metrics/perf.json > /dev/null
+          fi
+          python scripts/quality_gate.py evaluate --scope perf --require perf
+      - name: Publier les métriques
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-performance
+          path: metrics/
+          if-no-files-found: ignore
+      - name: Publier les rapports k6
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-performance
+          path: reports/
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ étape 5
+  quality-gate:
+    name: "5 · Quality Gate global"
+    needs: [secrets-scan, static-analysis, unit-tests, sonarqube, build-integration, artifact-scan, performance]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: metrics-*
+          path: metrics
+          merge-multiple: true
+      - name: Évaluation de tous les indicateurs
+        run: |
+          python scripts/quality_gate.py evaluate \
+            --require ut,it,perf,static,confidentiality --output reports/quality_gate.json
+      - name: Publier la décision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate
+          path: reports/quality_gate.json
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ étape 6
+  deploy:
+    name: "6 · Déploiement (simulé)"
+    needs: quality-gate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Déploiement simulé
+        run: |
+          echo "Déploiement de payflex-api:${GITHUB_SHA::12} sur l'environnement production (simulé)"
+          {
+            echo "### 🚀 Déploiement simulé"
+            echo ""
+            echo "| Élément | Valeur |"
+            echo "|---|---|"
+            echo "| Image | \`payflex-api:${GITHUB_SHA::12}\` |"
+            echo "| Branche | \`${GITHUB_REF_NAME}\` |"
+            echo "| Environnement | production (simulé) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------ toujours
+  incident-report:
+    name: "Rapport d'incident / de pipeline"
+    needs:
+      - secrets-scan
+      - static-analysis
+      - unit-tests
+      - sonarqube
+      - build-integration
+      - artifact-scan
+      - performance
+      - quality-gate
+      - deploy
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: metrics-*
+          path: metrics
+          merge-multiple: true
+      - name: Classification des erreurs et rapport
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python scripts/quality_gate.py report --metrics-dir metrics --output-dir reports
+      - name: Publier le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: incident-report
+          path: |
+            reports/incident_report.md
+            reports/incident_report.json
