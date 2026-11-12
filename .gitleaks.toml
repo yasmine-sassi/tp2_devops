@@ -1,0 +1,40 @@
+# Configuration Gitleaks de PayFlex API.
+# Règles par défaut de Gitleaks (clés cloud, tokens OAuth, clés privées, JWT, ...)
+# + règles métier : PII carte bancaire et jetons d'API PayFlex.
+title = "PayFlex - détection de secrets et de PII"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pii-credit-card-pan"
+description = "PII : numéro de carte bancaire (PAN) Visa / Mastercard / Amex / Discover en clair"
+# 16 chiffres (Visa 4xxx, Mastercard 51-55 / 22-27, Discover 6011) ou 15 chiffres (Amex 34/37),
+# séparateurs espace/tiret tolérés, non précédé ni suivi d'un autre chiffre.
+regex = '''(?:^|[^0-9])((?:4[0-9]{3}|5[1-5][0-9]{2}|2[2-7][0-9]{2}|6011)[ -]?[0-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}|3[47][0-9]{2}[ -]?[0-9]{6}[ -]?[0-9]{5})(?:[^0-9]|$)'''
+secretGroup = 1
+tags = ["pii", "pci-dss", "card"]
+
+[[rules]]
+id = "payflex-api-token"
+description = "Jeton d'API PayFlex (préfixe pfx_live_ ou pfx_test_)"
+regex = '''\b(pfx_(?:live|test)_[A-Za-z0-9]{24,})\b'''
+secretGroup = 1
+keywords = ["pfx_"]
+tags = ["secret", "payflex"]
+
+[allowlist]
+description = "Faux positifs justifiés uniquement (chaque entrée est documentée)"
+paths = [
+  # Répertoires techniques sans contenu applicatif.
+  '''(^|/)\.venv/''',
+  '''(^|/)\.git/''',
+  '''(^|/)node_modules/''',
+]
+# Comparé à la correspondance complète (et non au seul secret) pour rester très ciblé.
+regexTarget = "match"
+regexes = [
+  # Image de base officielle python:*-slim : GPG_KEY est l'empreinte PUBLIQUE (40 hex) de la
+  # clé OpenPGP du release manager CPython, utilisée pour vérifier l'archive source.
+  '''GPG_KEY=[0-9A-F]{40}\b''',
+]

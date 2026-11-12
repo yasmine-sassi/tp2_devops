@@ -12,3 +12,4 @@ metrics/
 .env
 incident_report.md
 incident_report.json
+artifacts/
