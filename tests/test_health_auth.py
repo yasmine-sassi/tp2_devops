@@ -97,3 +97,9 @@ def test_simulated_latency_slows_business_routes_only(settings: Settings) -> Non
     slow.get("/accounts")
     assert (time.perf_counter() - start) * 1000 >= 50
     assert slow.get("/health").status_code == 200
+
+
+def test_lifespan_events_pass_through_middleware(settings: Settings) -> None:
+    # Le gestionnaire de contexte déclenche les événements ASGI « lifespan » (scope non HTTP).
+    with TestClient(create_app(settings)) as managed:
+        assert managed.get("/health").status_code == 200

@@ -38,7 +38,7 @@ def decode_token(settings: Settings, token: str) -> str:
     return str(claims["sub"])
 
 
-def current_user(
+async def current_user(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> str:

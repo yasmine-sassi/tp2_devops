@@ -10,6 +10,8 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app import __version__
 from app.config import Settings, load_settings
@@ -59,24 +61,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.simulated_latency_ms:
         logger.warning("latence simulée active : %d ms par requête", settings.simulated_latency_ms)
 
-    @app.middleware("http")
-    async def access_log(request: Request, call_next):
-        start = time.perf_counter()
-        if settings.simulated_latency_ms and request.url.path != "/health":
-            await asyncio.sleep(settings.simulated_latency_ms / 1000)
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-        response.headers["X-Response-Time-Ms"] = f"{duration_ms:.1f}"
-        logger.info(
-            "%s %s -> %d (%.1f ms)",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-        )
-        return response
-
+    app.add_middleware(AccessLogMiddleware, simulated_latency_ms=settings.simulated_latency_ms)
     return app
+
+
+class AccessLogMiddleware:
+    """Middleware ASGI pur : journal d'accès (PAN masqués), en-tête de durée et latence simulée.
+
+    Implémenté sans BaseHTTPMiddleware, dont le surcoût est mesurable sous charge.
+    """
+
+    def __init__(self, app: ASGIApp, simulated_latency_ms: int = 0) -> None:
+        self.app = app
+        self.delay = simulated_latency_ms / 1000
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        start = time.perf_counter()
+        path = scope["path"]
+        if self.delay and path != "/health":
+            await asyncio.sleep(self.delay)
+        status_code = 500
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                elapsed = (time.perf_counter() - start) * 1000
+                headers = MutableHeaders(scope=message)
+                headers.append("X-Response-Time-Ms", f"{elapsed:.1f}")
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            logger.info("%s %s -> %d (%.1f ms)", scope["method"], path, status_code, duration_ms)
 
 
 app = create_app()

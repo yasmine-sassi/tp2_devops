@@ -26,11 +26,11 @@ logger = logging.getLogger("payflex")
 router = APIRouter()
 
 
-def get_settings(request: Request) -> Settings:
+async def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def get_store(request: Request) -> InMemoryStore:
+async def get_store(request: Request) -> InMemoryStore:
     return request.app.state.store
 
 
@@ -40,12 +40,12 @@ AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
 @router.get("/health", tags=["ops"])
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
 @router.post("/auth/token", response_model=TokenResponse, tags=["auth"])
-def issue_token(body: TokenRequest, settings: AppSettings) -> TokenResponse:
+async def issue_token(body: TokenRequest, settings: AppSettings) -> TokenResponse:
     if not check_credentials(settings, body.username, body.password):
         logger.warning("échec d'authentification pour l'utilisateur %s", body.username)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
@@ -56,14 +56,14 @@ def issue_token(body: TokenRequest, settings: AppSettings) -> TokenResponse:
 
 
 @router.get("/accounts", response_model=list[Account], tags=["accounts"])
-def list_accounts(user: User, db: Store) -> list[Account]:
+async def list_accounts(user: User, db: Store) -> list[Account]:
     return db.list_accounts(user)
 
 
 @router.post(
     "/accounts", response_model=Account, status_code=status.HTTP_201_CREATED, tags=["accounts"]
 )
-def create_account(body: AccountCreate, user: User, db: Store) -> Account:
+async def create_account(body: AccountCreate, user: User, db: Store) -> Account:
     account = db.create_account(user, body.holder_name, body.currency, body.initial_balance)
     logger.info("compte créé %s (%s)", account.id, account.currency)
     return account
@@ -72,7 +72,7 @@ def create_account(body: AccountCreate, user: User, db: Store) -> Account:
 @router.post(
     "/payments", response_model=Payment, status_code=status.HTTP_201_CREATED, tags=["payments"]
 )
-def create_payment(body: PaymentCreate, user: User, db: Store) -> Payment:
+async def create_payment(body: PaymentCreate, user: User, db: Store) -> Payment:
     payment = db.create_payment(
         user, body.account_id, body.amount, body.currency, body.merchant, body.card_number
     )
@@ -88,7 +88,7 @@ def create_payment(body: PaymentCreate, user: User, db: Store) -> Payment:
 
 
 @router.get("/transactions", response_model=list[Transaction], tags=["payments"])
-def list_transactions(
+async def list_transactions(
     user: User,
     db: Store,
     account_id: str | None = None,
