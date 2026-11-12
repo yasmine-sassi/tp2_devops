@@ -30,8 +30,9 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
   GITLEAKS_VERSION: "8.21.2"
-  # Latence artificielle injectée dans l'API (ms). Scénario demo/perf-fail : 600.
-  SIMULATED_LATENCY_MS: "0"
+  # Latence artificielle injectée dans l'API (ms). DÉMO demo/perf-fail : 600 ms par requête
+  # -> p95 > 500 ms -> erreur CRITIQUE, arrêt du pipeline, pas de déploiement.
+  SIMULATED_LATENCY_MS: "600"
   K6_VUS: "10"
   K6_DURATION: "30s"
   PYTHONIOENCODING: utf-8
