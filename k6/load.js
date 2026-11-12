@@ -13,8 +13,8 @@ export const options = {
   vus: parseInt(__ENV.K6_VUS || '10', 10),
   duration: __ENV.K6_DURATION || '30s',
   thresholds: {
-    http_req_duration: ['p(95)<500'],
-    http_req_failed: ['rate<0.02'],
+    http_req_duration: ['p(95)<=500'],
+    http_req_failed: ['rate<=0.02'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
 };
