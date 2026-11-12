@@ -21,3 +21,28 @@ Enregistre les fichiers dans `docs/screenshots/` avec **exactement** ces noms. C
 | Fichier | Comment l'obtenir |
 |---|---|
 | `grafana-pipeline.png` (facultatif) | `docker compose --profile monitoring up -d`, puis exécuter `PUSHGATEWAY_URL=http://localhost:9091 bash scripts/run_local_pipeline.sh` sur chaque branche (avec `SIMULATED_LATENCY_MS=600` pour `demo/perf-fail`). Ouvrir http://localhost:3000, tableau de bord « PayFlex - indicateurs du pipeline CI/CD », et capturer la rangée « Comparaison des branches » |
+
+## Captures réalisées
+
+### 1. Pipeline réussi (`main`) : `pipeline-succes.png`
+![Pipeline réussi](screenshots/pipeline-succes.png)
+
+### 2. Erreur non critique (`demo/warning-coverage`) : `pipeline-warning.png`
+![Succès avec avertissement de couverture](screenshots/pipeline-warning.png)
+
+Complément : graphe entièrement vert du même run, le pipeline a continué jusqu'au déploiement (`pipeline-warning-graphe.png`).
+
+![Graphe du run warning-coverage](screenshots/pipeline-warning-graphe.png)
+
+### 3. Arrêt sur test de performance (`demo/perf-fail`) : `pipeline-echec-perf.png`
+![Pipeline interrompu par k6](screenshots/pipeline-echec-perf.png)
+
+### 4. Arrêt sur fuite de donnée confidentielle (`demo/leak`) : `pipeline-echec-fuite.png`
+![Pipeline interrompu par Gitleaks](screenshots/pipeline-echec-fuite.png)
+
+### 5. Rapport d'incident : `rapport-incident.png`
+![Rapport d'incident perf-fail](screenshots/rapport-incident.png)
+
+Complément : rapport d'incident du scénario de fuite (`rapport-incident-fuite.png`).
+
+![Rapport d'incident fuite](screenshots/rapport-incident-fuite.png)
