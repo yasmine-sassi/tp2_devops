@@ -1,0 +1,598 @@
+{
+  "info": {
+    "name": "PayFlex API - Integration",
+    "description": "Contrats d'API et scénario bout-en-bout : auth -> compte -> paiement -> historique.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Santé",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('contrat health', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(body.version).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Authentification",
+      "item": [
+        {
+          "name": "POST /auth/token (mauvais mot de passe)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sur identifiants invalides', () => pm.response.to.have.status(401));",
+                  "pm.test('pas de jeton renvoyé', () => pm.expect(pm.response.json()).to.not.have.property('access_token'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}-wrong\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('contrat token', () => {",
+                  "  pm.expect(body.token_type).to.eql('bearer');",
+                  "  pm.expect(body.access_token).to.be.a('string').and.not.be.empty;",
+                  "  pm.expect(body.expires_in).to.be.a('number').and.above(0);",
+                  "});",
+                  "pm.collectionVariables.set('token', body.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /accounts sans jeton",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sans jeton', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Scénario paiement",
+      "item": [
+        {
+          "name": "POST /accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const schema = {\"type\": \"object\", \"required\": [\"id\", \"holder_name\", \"currency\", \"balance\", \"created_at\"], \"properties\": {\"id\": {\"type\": \"string\", \"pattern\": \"^acc_\"}, \"holder_name\": {\"type\": \"string\"}, \"currency\": {\"enum\": [\"EUR\", \"USD\", \"TND\"]}, \"balance\": {\"type\": \"string\"}, \"created_at\": {\"type\": \"string\"}}};",
+                  "pm.test('contrat Account', () => pm.response.to.have.jsonSchema(schema));",
+                  "const body = pm.response.json();",
+                  "pm.test('solde initial', () => pm.expect(body.balance).to.eql('500.00'));",
+                  "pm.collectionVariables.set('accountId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holder_name\": \"Newman Integration\",\n  \"currency\": \"EUR\",\n  \"initial_balance\": \"500.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('le compte créé est listé', () => {",
+                  "  const ids = pm.response.json().map(a => a.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get('accountId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /payments",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PAN de test généré à l'exécution (aucun numéro de carte en clair dans le dépôt).",
+                  "function luhnComplete(body) {",
+                  "  let sum = 0;",
+                  "  body.split('').reverse().forEach((c, i) => {",
+                  "    let d = parseInt(c, 10);",
+                  "    if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } }",
+                  "    sum += d;",
+                  "  });",
+                  "  return body + ((10 - (sum % 10)) % 10);",
+                  "}",
+                  "const pan = luhnComplete('400000' + '0'.repeat(9));",
+                  "pm.variables.set('cardNumber', pan);",
+                  "const last = parseInt(pan.slice(-1), 10);",
+                  "pm.variables.set('invalidCardNumber', pan.slice(0, -1) + ((last + 1) % 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const schema = {\"type\": \"object\", \"required\": [\"id\", \"account_id\", \"amount\", \"currency\", \"merchant\", \"card_number\", \"status\", \"created_at\"], \"properties\": {\"id\": {\"type\": \"string\", \"pattern\": \"^txn_\"}, \"account_id\": {\"type\": \"string\"}, \"amount\": {\"type\": \"string\"}, \"currency\": {\"enum\": [\"EUR\", \"USD\", \"TND\"]}, \"merchant\": {\"type\": \"string\"}, \"card_number\": {\"type\": \"string\", \"pattern\": \"^\\\\*{4} \\\\*{4} \\\\*{4} [0-9]{4}$\"}, \"status\": {\"enum\": [\"completed\"]}, \"created_at\": {\"type\": \"string\"}}};",
+                  "pm.test('contrat Payment', () => pm.response.to.have.jsonSchema(schema));",
+                  "const body = pm.response.json();",
+                  "const pan = pm.variables.get('cardNumber');",
+                  "pm.test('PAN masqué dans la réponse', () => {",
+                  "  pm.expect(body.card_number).to.eql('**** **** **** ' + pan.slice(-4));",
+                  "  pm.expect(pm.response.text()).to.not.include(pan);",
+                  "});",
+                  "pm.test('montant et statut', () => {",
+                  "  pm.expect(body.amount).to.eql('120.00');",
+                  "  pm.expect(body.status).to.eql('completed');",
+                  "});",
+                  "pm.collectionVariables.set('paymentId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"amount\": \"120.00\",\n  \"currency\": \"EUR\",\n  \"merchant\": \"Boutique Newman\",\n  \"card_number\": \"{{cardNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /payments (carte invalide)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PAN de test généré à l'exécution (aucun numéro de carte en clair dans le dépôt).",
+                  "function luhnComplete(body) {",
+                  "  let sum = 0;",
+                  "  body.split('').reverse().forEach((c, i) => {",
+                  "    let d = parseInt(c, 10);",
+                  "    if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } }",
+                  "    sum += d;",
+                  "  });",
+                  "  return body + ((10 - (sum % 10)) % 10);",
+                  "}",
+                  "const pan = luhnComplete('400000' + '0'.repeat(9));",
+                  "pm.variables.set('cardNumber', pan);",
+                  "const last = parseInt(pan.slice(-1), 10);",
+                  "pm.variables.set('invalidCardNumber', pan.slice(0, -1) + ((last + 1) % 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 sur carte invalide', () => pm.response.to.have.status(422));",
+                  "pm.test(\"la carte saisie n'est pas renvoyée\", () => {",
+                  "  pm.expect(pm.response.text()).to.not.include(pm.variables.get('invalidCardNumber'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"EUR\",\n  \"merchant\": \"Boutique Newman\",\n  \"card_number\": \"{{invalidCardNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /payments (fonds insuffisants)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PAN de test généré à l'exécution (aucun numéro de carte en clair dans le dépôt).",
+                  "function luhnComplete(body) {",
+                  "  let sum = 0;",
+                  "  body.split('').reverse().forEach((c, i) => {",
+                  "    let d = parseInt(c, 10);",
+                  "    if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } }",
+                  "    sum += d;",
+                  "  });",
+                  "  return body + ((10 - (sum % 10)) % 10);",
+                  "}",
+                  "const pan = luhnComplete('400000' + '0'.repeat(9));",
+                  "pm.variables.set('cardNumber', pan);",
+                  "const last = parseInt(pan.slice(-1), 10);",
+                  "pm.variables.set('invalidCardNumber', pan.slice(0, -1) + ((last + 1) % 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 fonds insuffisants', () => pm.response.to.have.status(409));",
+                  "pm.test('message métier', () => pm.expect(pm.response.json().detail).to.eql('insufficient funds'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"amount\": \"99999.00\",\n  \"currency\": \"EUR\",\n  \"merchant\": \"Boutique Newman\",\n  \"card_number\": \"{{cardNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /transactions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const schema = {\"type\": \"array\", \"items\": {\"type\": \"object\", \"required\": [\"id\", \"account_id\", \"type\", \"amount\", \"currency\", \"description\", \"balance_after\", \"created_at\"], \"properties\": {\"type\": {\"enum\": [\"credit\", \"debit\"]}}}};",
+                  "pm.test('contrat Transaction[]', () => pm.response.to.have.jsonSchema(schema));",
+                  "const txns = pm.response.json();",
+                  "pm.test('historique : débit puis dépôt initial', () => {",
+                  "  pm.expect(txns).to.have.lengthOf(2);",
+                  "  pm.expect(txns[0].id).to.eql(pm.collectionVariables.get('paymentId'));",
+                  "  pm.expect(txns[0].type).to.eql('debit');",
+                  "  pm.expect(txns[0].balance_after).to.eql('380.00');",
+                  "  pm.expect(txns[1].type).to.eql('credit');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?account_id={{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "{{accountId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /accounts (solde final)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('solde débité', () => {",
+                  "  const acc = pm.response.json().find(a => a.id === pm.collectionVariables.get('accountId'));",
+                  "  pm.expect(acc.balance).to.eql('380.00');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "accountId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    }
+  ]
+}

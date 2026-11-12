@@ -1,0 +1,72 @@
+# Environnement éphémère de test de PayFlex API.
+#   docker compose up -d --wait api                 -> API + healthcheck
+#   docker compose --profile it run --rm newman     -> tests d'intégration (Newman)
+#   docker compose --profile perf run --rm k6       -> tir de charge (k6)
+#   docker compose --profile sonar up -d sonarqube  -> SonarQube Community (local)
+#   docker compose down -v                          -> destruction de l'environnement
+# PAYFLEX_DEMO_PASSWORD est fourni par l'environnement (généré aléatoirement en CI).
+name: payflex
+
+services:
+  api:
+    build: .
+    image: payflex-api:${IMAGE_TAG:-local}
+    environment:
+      PAYFLEX_DEMO_USER: ${PAYFLEX_DEMO_USER:-demo}
+      PAYFLEX_DEMO_PASSWORD: ${PAYFLEX_DEMO_PASSWORD:-}
+      PAYFLEX_JWT_SECRET: ${PAYFLEX_JWT_SECRET:-}
+      SIMULATED_LATENCY_MS: ${SIMULATED_LATENCY_MS:-0}
+    ports:
+      - "8000:8000"
+
+  newman:
+    image: postman/newman:6-alpine
+    profiles: ["it"]
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./postman:/etc/newman:ro
+      - ./reports:/reports
+    command:
+      - run
+      - payflex.postman_collection.json
+      - --environment=env.ci.json
+      - --env-var=baseUrl=http://api:8000
+      - --env-var=username=${PAYFLEX_DEMO_USER:-demo}
+      - --env-var=password=${PAYFLEX_DEMO_PASSWORD:-}
+      - --reporters=cli,junit
+      - --reporter-junit-export=/reports/newman-junit.xml
+      - --color=on
+
+  k6:
+    image: grafana/k6:0.54.0
+    profiles: ["perf"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://api:8000
+      PAYFLEX_USER: ${PAYFLEX_DEMO_USER:-demo}
+      PAYFLEX_PASSWORD: ${PAYFLEX_DEMO_PASSWORD:-}
+      K6_VUS: ${K6_VUS:-10}
+      K6_DURATION: ${K6_DURATION:-30s}
+    volumes:
+      - ./k6:/scripts:ro
+      - ./reports:/reports
+    command: ["run", "--summary-export=/reports/k6-summary.json", "/scripts/load.js"]
+
+  sonarqube:
+    image: sonarqube:10.7.0-community
+    profiles: ["sonar"]
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
