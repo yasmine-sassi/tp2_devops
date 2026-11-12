@@ -541,7 +541,13 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     status = overall(findings)
 
     for f in findings:
-        if f["classification"] == WARNING:
+        if f["classification"] == OK:
+            annotate(
+                "notice",
+                f"{f['indicator']} = {f['value']} (seuil {f['threshold']})",
+                title=f"OK - {f['indicator']}",
+            )
+        elif f["classification"] == WARNING:
             annotate("warning", f["message"], title=f"Non-critique - {f['indicator']}")
         elif f["classification"] == CRITICAL:
             annotate(
@@ -741,6 +747,21 @@ def cmd_report(args: argparse.Namespace) -> int:
     (out_dir / "incident_report.md").write_text(markdown, encoding="utf-8", newline="\n")
     append_summary(markdown)
     print(markdown)
+    root = report["root_cause"]
+    if root:
+        annotate(
+            "error",
+            f"Job {root['job']} | {root['indicator']} = {root['value']} | seuil violé : "
+            f"{root['threshold']} | {root['message']} | action : {root['recommended_action']}",
+            title=f"Rapport d'incident - déploiement {report['deployment']}",
+        )
+    else:
+        annotate(
+            "notice",
+            f"Statut {report['status']} - {len(report['warnings'])} avertissement(s) - "
+            f"déploiement {report['deployment']}",
+            title="Rapport de pipeline",
+        )
     return 0
 
 

@@ -132,13 +132,20 @@ def main() -> int:
             title="Confidentialité non vérifiable",
         )
         return EXIT_MISSING_REPORT
+    per_target = ", ".join(f"{name} : {info['leaks']}" for name, info in targets.items())
     if rate < 100:
         annotate(
             "error",
-            f"Taux de confidentialité {rate:.0f} % < 100 % : pipeline bloqué",
+            f"Taux de confidentialité {rate:.0f} % < 100 % ({leaks} fuite(s) ; {per_target}) "
+            ": pipeline bloqué",
             title="Erreur CRITIQUE - confidentialité",
         )
         return EXIT_LEAK
+    annotate(
+        "notice",
+        f"Taux de confidentialité = {rate:.0f} % (0 fuite ; {per_target})",
+        title=f"OK - confidentialité ({args.stage})",
+    )
     return 0
 
 

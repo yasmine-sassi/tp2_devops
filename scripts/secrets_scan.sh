@@ -24,8 +24,8 @@ case "${1:-}" in
     rm -rf .scan/config && mkdir -p .scan/config
     shopt -s nullglob dotglob
     for path in Dockerfile docker-compose*.yml .gitleaks.toml sonar-project.properties \
-                pyproject.toml requirements*.txt .env* *.env .github postman k6 monitoring \
-                app/config.py; do
+                pyproject.toml requirements*.txt .env* *.env *.properties *.ini *.cfg *.conf \
+                *.yml *.yaml config .github postman k6 monitoring app/config.py; do
       [ -e "$path" ] && cp -r --parents "$path" .scan/config/
     done
     $GITLEAKS dir .scan/config "${COMMON[@]}" --report-path reports/gitleaks-config.json
